@@ -1211,8 +1211,8 @@ public class GitHubSCMNavigator extends SCMNavigator {
         GitHubWebHook.get().registerHookFor(owner);
         try {
             // FIXME MINOR HACK ALERT
-            StandardCredentials credentials = Connector.lookupScanCredentials((Item)owner, getApiUri(), credentialsId);
-            GitHub hub = Connector.connect(getApiUri(), credentials);
+            //StandardCredentials credentials = Connector.lookupScanCredentials((Item)owner, getApiUri(), credentialsId);
+            GitHub hub = Connector.connectPrivileged(getApiUri());
             try {
                 GitHubOrgWebHook.register(hub, repoOwner);
             } finally {
