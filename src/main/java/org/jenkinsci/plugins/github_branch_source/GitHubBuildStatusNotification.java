@@ -168,8 +168,7 @@ public class GitHubBuildStatusNotification {
                 return null;
             }
             if (source.getScanCredentialsId() != null) {
-                return Connector.connect(source.getApiUri(), Connector.lookupScanCredentials
-                        (job, source.getApiUri(), source.getScanCredentialsId()));
+                return Connector.connectPrivileged(source.getApiUri());
             }
         }
         return null;

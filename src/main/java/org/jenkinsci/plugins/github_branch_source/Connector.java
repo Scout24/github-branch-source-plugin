@@ -86,6 +86,7 @@ import org.kohsuke.github.GitHubBuilder;
 import org.kohsuke.github.HttpConnector;
 import org.kohsuke.github.RateLimitHandler;
 import org.kohsuke.github.extras.OkHttpConnector;
+import static org.jenkinsci.plugins.github_branch_source.Endpoint.credentialsFor;
 
 import static java.util.logging.Level.FINE;
 
@@ -139,8 +140,18 @@ public class Connector {
      */
     @NonNull
     public static ListBoxModel listScanCredentials(@CheckForNull Item context, String apiUri) {
-        return new StandardListBoxModel()
-                .includeEmptyValue()
+        //LOGGER.log(Level.FINE, "Listing scan credentials {0}, {1}", new Object[]{ context.toString(), apiUri });
+        LOGGER.log(Level.FINE, "Listing scan credentials");
+        try {
+          boolean result = context instanceof Queue.Task;
+          LOGGER.log(Level.FINE, "context instanceof Queue.Task: {0}", new Object[]{ result });
+          String acl = Tasks.getDefaultAuthenticationOf((Queue.Task) context).toString();
+          LOGGER.log(Level.FINE, "ACL: {0}", new Object[]{ acl });
+        } catch (Exception e){
+
+        }
+        StandardListBoxModel result = new StandardListBoxModel();
+          result.includeEmptyValue()
                 .includeMatchingAs(
                         context instanceof Queue.Task
                                 ? Tasks.getDefaultAuthenticationOf((Queue.Task) context)
@@ -150,6 +161,9 @@ public class Connector {
                         githubDomainRequirements(apiUri),
                         githubScanCredentialsMatcher()
                 );
+
+        LOGGER.log(Level.FINE, "ListBoxModel: {0}", new Object[]{ result.toString() });
+        return result;
     }
 
     /**
@@ -328,6 +342,29 @@ public class Connector {
         }
     }
 
+    public static @NonNull GitHub connectPrivileged(@CheckForNull String apiUri) throws IOException {
+        String apiUrl = Util.fixEmptyAndTrim(apiUri);
+        apiUrl = apiUrl != null ? apiUrl : GitHubServerConfig.GITHUB_URL;
+
+        LOGGER.log(Level.FINE, "Using privileged credentials from global config");
+
+        StandardCredentials systemCredentials = null;
+        try {
+          LOGGER.log(Level.FINE, "API URI: {0}", new Object[]{apiUrl});
+          Endpoint e = GitHubConfiguration.get().findEndpoint(apiUrl);
+          LOGGER.log(Level.FINE, "Found endpoint: {0}", new Object[]{ e });
+          systemCredentials = e.credentialsFor(e.getCredentialsId());
+          LOGGER.log(Level.FINE, "Found credentials: {0}", new Object[]{ systemCredentials });
+        } catch (Exception ex) {
+          LOGGER.log(Level.WARNING, "Exception: {0}", new Object[]{ ex });
+        }
+        if (systemCredentials != null) {
+          return connect(apiUri, systemCredentials);
+        } else {
+          return connect(apiUri, null);
+        }
+    }
+
     public static @Nonnull GitHub connect(@CheckForNull String apiUri, @CheckForNull StandardCredentials credentials) throws IOException {
         String apiUrl = Util.fixEmptyAndTrim(apiUri);
         apiUrl = apiUrl != null ? apiUrl : GitHubServerConfig.GITHUB_URL;
@@ -341,6 +378,19 @@ public class Connector {
             password = null;
             hash = "anonymous";
             authHash = "anonymous";
+            StandardCredentials systemCredentials = null;
+            try {
+              LOGGER.log(Level.FINE, "API URI: {0}", new Object[]{apiUrl});
+              Endpoint e = GitHubConfiguration.get().findEndpoint(apiUrl);
+              LOGGER.log(Level.FINE, "Found endpoint: {0}", new Object[]{ e });
+              systemCredentials = e.credentialsFor(e.getCredentialsId());
+              LOGGER.log(Level.FINE, "Found credentials: {0}", new Object[]{ systemCredentials });
+            } catch (Exception ex) {
+              LOGGER.log(Level.WARNING, "Exception: {0}", new Object[]{ ex });
+            }
+            if (systemCredentials != null) {
+              return connect(apiUri, systemCredentials);
+            }
         } else if (credentials instanceof StandardUsernamePasswordCredentials) {
             StandardUsernamePasswordCredentials c = (StandardUsernamePasswordCredentials) credentials;
             username = c.getUsername();
@@ -548,6 +598,24 @@ public class Connector {
             hubs.put(github, null);
         }
         if (credentials != null && !isCredentialValid(github)) {
+          StandardCredentials systemCredentials = null;
+          try {
+            String apiUrl = Util.fixEmptyAndTrim(apiUri);
+            apiUrl = apiUrl != null ? apiUrl : GitHubServerConfig.GITHUB_URL;
+            LOGGER.log(Level.FINE, "API URI: {0}", new Object[]{apiUrl});
+            Endpoint e = GitHubConfiguration.get().findEndpoint(apiUrl);
+            LOGGER.log(Level.FINE, "Found endpoint: {0}", new Object[]{ e });
+            systemCredentials = e.credentialsFor(e.getCredentialsId());
+            LOGGER.log(Level.FINE, "Found credentials: {0}", new Object[]{ systemCredentials });
+          } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Exception: {0}", new Object[]{ ex });
+          }
+          if (systemCredentials != null) {
+            checkConnectionValidity(apiUri, listener, systemCredentials, github);
+            return;
+          }
+        }
+        if (credentials != null && !github.isCredentialValid()) {
             String message = String.format("Invalid scan credentials %s to connect to %s, skipping",
                     CredentialsNameProvider.name(credentials), apiUri == null ? GitHubSCMSource.GITHUB_URL : apiUri);
             throw new AbortException(message);
@@ -571,7 +639,20 @@ public class Connector {
     /*package*/
     static void checkApiRateLimit(@NonNull TaskListener listener, GitHub github)
             throws IOException, InterruptedException {
-        boolean check = true;
+        final boolean DISABLE_RATE_LIMIT_CHECK = Boolean.parseBoolean(System
+                .getProperty(Connector.class.getName() + ".DISABLE_RATE_LIMIT_CHECK", Boolean.FALSE.toString()));
+
+        boolean check;
+        if (DISABLE_RATE_LIMIT_CHECK) {
+            check = false;
+            listener.getLogger().println(GitHubConsoleNote.create(System.currentTimeMillis(),  String.format(
+                "GitHub API Usage: skipping the check as it was disabled by system property %s", Connector.class.getName()
+        )));
+        }
+        else {
+            check = true;
+        }
+
         while (check) {
             check = false;
             long start = System.currentTimeMillis();

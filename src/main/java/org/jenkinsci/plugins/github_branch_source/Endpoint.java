@@ -33,6 +33,10 @@ import hudson.Util;
 import hudson.model.AbstractDescribableImpl;
 import hudson.model.Descriptor;
 import hudson.util.FormValidation;
+import hudson.util.ListBoxModel;
+import hudson.util.Secret;
+import hudson.security.ACL;
+import jenkins.model.Jenkins;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -41,9 +45,16 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 import java.util.logging.Logger;
 import java.util.logging.Level;
+import javax.annotation.Nonnull;
+import com.google.common.base.Optional;
+import com.google.common.base.Supplier;
+import static org.apache.commons.lang3.StringUtils.defaultIfBlank;
+import static org.apache.commons.lang3.StringUtils.trimToEmpty;
 
 import jenkins.model.Jenkins;
 import jenkins.scm.api.SCMName;
@@ -54,6 +65,18 @@ import org.kohsuke.github.GitHub;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.interceptor.RequirePOST;
+import org.jenkinsci.plugins.github.util.FluentIterableWrapper;
+import org.jenkinsci.plugins.github.util.misc.NullSafeFunction;
+
+import com.cloudbees.plugins.credentials.CredentialsMatchers;
+import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
+import com.cloudbees.plugins.credentials.common.StandardUsernamePasswordCredentials;
+import com.cloudbees.plugins.credentials.domains.DomainRequirement;
+import static com.cloudbees.plugins.credentials.CredentialsMatchers.filter;
+import static com.cloudbees.plugins.credentials.CredentialsMatchers.withId;
+import static com.cloudbees.plugins.credentials.CredentialsProvider.lookupCredentials;
+import static com.cloudbees.plugins.credentials.domains.URIRequirementBuilder.fromUri;
+import org.jenkinsci.plugins.plaincredentials.StringCredentials;
 
 /**
  * @author Stephen Connolly
@@ -70,22 +93,34 @@ public class Endpoint extends AbstractDescribableImpl<Endpoint> {
             "source."
     };
 
+    /**
+     * Because of {@link GitHub} hide this const from external use we need to store it here
+     */
+    public static final String GITHUB_URL = "https://api.github.com";
+
+    /**
+     * Used as default token value if no any creds found by given credsId.
+     */
+    private static final String UNKNOWN_TOKEN = "UNKNOWN_TOKEN";
+
     private final String name;
     private final String apiUri;
+    private final String credentialsId;
 
     @DataBoundConstructor
-    public Endpoint(String apiUri, String name) {
+    public Endpoint(String apiUri, String name, String credentialsId) {
         this.apiUri = GitHubConfiguration.normalizeApiUri(Util.fixEmptyAndTrim(apiUri));
         if (StringUtils.isBlank(name)) {
             this.name = SCMName.fromUrl(this.apiUri, COMMON_PREFIX_HOSTNAMES);
         } else {
             this.name = name.trim();
         }
+        this.credentialsId = credentialsId;
     }
 
     private Object readResolve() throws ObjectStreamException {
         if (!apiUri.equals(GitHubConfiguration.normalizeApiUri(apiUri))) {
-            return new Endpoint(apiUri, name);
+            return new Endpoint(apiUri, name, credentialsId);
         }
         return this;
     }
@@ -131,6 +166,31 @@ public class Endpoint extends AbstractDescribableImpl<Endpoint> {
     public int hashCode() {
         return apiUri != null ? apiUri.hashCode() : 0;
     }
+
+    public String getCredentialsId() {
+        return credentialsId;
+    }
+
+
+    /**
+     * Tries to find {@link StandardUsernamePasswordCredentials} by id and returns them.
+     *
+     * @param credentialsId id to find creds
+     *
+     * @return secret from creds or empty optional
+     */
+    @Nonnull
+    public static StandardUsernamePasswordCredentials credentialsFor(String credentialsId) {
+        List<StandardUsernamePasswordCredentials> creds = filter(
+                lookupCredentials(StandardUsernamePasswordCredentials.class,
+                        Jenkins.getInstance(), ACL.SYSTEM,
+                        Collections.<DomainRequirement>emptyList()),
+                withId(trimToEmpty(credentialsId))
+        );
+
+        return creds.get(0);
+    }
+
 
     @Extension
     public static class DesciptorImpl extends Descriptor<Endpoint> {
@@ -185,5 +245,44 @@ public class Endpoint extends AbstractDescribableImpl<Endpoint> {
             }
             return FormValidation.ok();
         }
+
+        @SuppressWarnings("unused")
+        public ListBoxModel doFillCredentialsIdItems(@QueryParameter String apiUrl,
+                                                     @QueryParameter String credentialsId) {
+            if (!Jenkins.getInstance().hasPermission(Jenkins.ADMINISTER)) {
+                return new StandardListBoxModel().includeCurrentValue(credentialsId);
+            }
+            return new StandardListBoxModel()
+                    .includeEmptyValue()
+                    .includeMatchingAs(ACL.SYSTEM,
+                            Jenkins.getInstance(),
+                            StandardUsernamePasswordCredentials.class,
+                            fromUri(defaultIfBlank(apiUrl, GITHUB_URL)).build(),
+                            CredentialsMatchers.always()
+                    );
+        }
+
+        // @SuppressWarnings("unused")
+        // public FormValidation doVerifyCredentials(
+        //         @QueryParameter String apiUrl,
+        //         @QueryParameter String credentialsId) throws IOException {
+        //
+        //     Endpoint endpoint = new Endpoint(credentialsId);
+        //     config.setApiUrl(apiUrl);
+        //     config.setClientCacheSize(0);
+        //     GitHub gitHub = new GitHubLoginFunction().apply(config);
+        //
+        //     try {
+        //         if (gitHub != null && gitHub.isCredentialValid()) {
+        //             return FormValidation.ok("Credentials verified for user %s, rate limit: %s",
+        //                     gitHub.getMyself().getLogin(), gitHub.getRateLimit().remaining);
+        //         } else {
+        //             return FormValidation.error("Failed to validate the account");
+        //         }
+        //     } catch (IOException e) {
+        //         return FormValidation.error(e, "Failed to validate the account");
+        //     }
+        // }
+
     }
 }
