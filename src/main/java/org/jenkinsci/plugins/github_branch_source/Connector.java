@@ -148,7 +148,7 @@ public class Connector {
           String acl = Tasks.getDefaultAuthenticationOf((Queue.Task) context).toString();
           LOGGER.log(Level.FINE, "ACL: {0}", new Object[]{ acl });
         } catch (Exception e){
-
+          LOGGER.log(Level.WARNING, "Exception: {0}", new Object[]{ e });
         }
         StandardListBoxModel result = new StandardListBoxModel();
           result.includeEmptyValue()
@@ -353,12 +353,14 @@ public class Connector {
           LOGGER.log(Level.FINE, "API URI: {0}", new Object[]{apiUrl});
           Endpoint e = GitHubConfiguration.get().findEndpoint(apiUrl);
           LOGGER.log(Level.FINE, "Found endpoint: {0}", new Object[]{ e });
-          systemCredentials = e.credentialsFor(e.getCredentialsId());
-          LOGGER.log(Level.FINE, "Found credentials: {0}", new Object[]{ systemCredentials });
+          if (e != null) {
+              systemCredentials = e.credentialsFor(e.getCredentialsId());
+          }
         } catch (Exception ex) {
           LOGGER.log(Level.WARNING, "Exception: {0}", new Object[]{ ex });
         }
         if (systemCredentials != null) {
+          LOGGER.log(Level.FINE, "Found credentials: {0}", new Object[]{ systemCredentials });
           return connect(apiUri, systemCredentials);
         } else {
           return connect(apiUri, null);
@@ -383,12 +385,14 @@ public class Connector {
               LOGGER.log(Level.FINE, "API URI: {0}", new Object[]{apiUrl});
               Endpoint e = GitHubConfiguration.get().findEndpoint(apiUrl);
               LOGGER.log(Level.FINE, "Found endpoint: {0}", new Object[]{ e });
-              systemCredentials = e.credentialsFor(e.getCredentialsId());
-              LOGGER.log(Level.FINE, "Found credentials: {0}", new Object[]{ systemCredentials });
+              if (e != null) {
+                  systemCredentials = e.credentialsFor(e.getCredentialsId());
+              }
             } catch (Exception ex) {
               LOGGER.log(Level.WARNING, "Exception: {0}", new Object[]{ ex });
             }
             if (systemCredentials != null) {
+              LOGGER.log(Level.FINE, "Found credentials: {0}", new Object[]{ systemCredentials });
               return connect(apiUri, systemCredentials);
             }
         } else if (credentials instanceof StandardUsernamePasswordCredentials) {
@@ -605,12 +609,14 @@ public class Connector {
             LOGGER.log(Level.FINE, "API URI: {0}", new Object[]{apiUrl});
             Endpoint e = GitHubConfiguration.get().findEndpoint(apiUrl);
             LOGGER.log(Level.FINE, "Found endpoint: {0}", new Object[]{ e });
-            systemCredentials = e.credentialsFor(e.getCredentialsId());
-            LOGGER.log(Level.FINE, "Found credentials: {0}", new Object[]{ systemCredentials });
+            if (e != null) {
+                systemCredentials = e.credentialsFor(e.getCredentialsId());
+            }
           } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Exception: {0}", new Object[]{ ex });
           }
           if (systemCredentials != null) {
+            LOGGER.log(Level.FINE, "Found credentials: {0}", new Object[]{ systemCredentials });
             checkConnectionValidity(apiUri, listener, systemCredentials, github);
             return;
           }
