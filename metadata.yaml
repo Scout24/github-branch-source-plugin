@@ -1,0 +1,10 @@
+availability: false
+confidentiality: public
+id: github-branch-source-plugin
+integrity: false
+links: []
+owners:
+  - developerexperience@scout24.com
+product: github-branch-source-plugin
+vertical: s24
+type: application
